@@ -3,15 +3,15 @@
 
 var canvas = document.getElementById("canvas")
 
-canvas.style.width = window.innerWidth - 10 + "px";
-canvas.style.height = window.innerHeight - 10 + "px";  
+canvas.style.width = window.innerWidth - 40 + "px";
+canvas.style.height = window.innerHeight - 40 + "px";  
 
 var ctx = canvas.getContext('2d')
 
 // Set actual size in memory (scaled to account for extra pixel density).
 var scale = window.devicePixelRatio; // Change to 1 on retina screens to see blurry canvas.
-canvas.width = Math.floor(window.innerWidth * scale);
-canvas.height = Math.floor(window.innerHeight * scale);
+canvas.width = Math.floor((window.innerWidth - 40) * scale);
+canvas.height = Math.floor((window.innerHeight - 40) * scale);
 
 // --------------------------------------------
 
@@ -20,6 +20,9 @@ document.addEventListener('DOMContentLoaded', main);
 // fields
 var points = [];
 var paths = [];
+centralStation = null;
+
+// --------------------------------------------
 
 async function main(){
     clearCanvas();
@@ -31,10 +34,17 @@ async function main(){
     drawPoints(points, '#ff0000');
 
     await sleep(1000);
+    
+    setInterval(draw, 1000/60);
+    centralStation = getCenterStation();
+
+    await sleep(1000);
+
+    findStationDistances(points);
+    findMinimumSpanningTree(points);
     paths = generatePaths();
     drawPaths(paths);
 
-    setInterval(draw, 1000/60);
 }
 
 // --------------------------------------------
@@ -44,7 +54,12 @@ async function main(){
 function generateNPoints(n) {
     let points = [];
     for (let i = 0; i < n; i++) {
-        points.push([Math.random() * canvas.width, Math.random() * canvas.height]);
+        points.push({
+            id: "#" + i,
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            neighbors: []
+        });
     }
     return points;
 }
@@ -53,7 +68,14 @@ function drawPoints(points, color = '#000000') {
     ctx.fillStyle = color;
     points.forEach((point) => {
         ctx.beginPath();
-        ctx.arc(point[0], point[1], 4, 0, 2 * Math.PI);
+
+        if(point.id == centralStation?.id){
+            ctx.fillStyle = '#00ff00';
+            ctx.arc(point.x, point.y, 8, 0, 2 * Math.PI);
+        }else{
+            ctx.fillStyle = color;
+            ctx.arc(point.x, point.y, 4, 0, 2 * Math.PI);
+        }        
         ctx.fill();
     });
 }
@@ -61,13 +83,18 @@ function drawPoints(points, color = '#000000') {
 function quantizePoints(points){
     
     let quantizedPoints = [];
-    let rounding = 50
+    let rounding = 100
 
     //round each point to the nearest multiple of <rounding>
     points.forEach((point) => {
-        let x = Math.round(point[0] / rounding) * rounding;
-        let y = Math.round(point[1] / rounding) * rounding;
-        quantizedPoints.push([x, y]);
+        let x = Math.round(point.x / rounding) * rounding;
+        let y = Math.round(point.y / rounding) * rounding;
+        quantizedPoints.push({
+            id: point.id,
+            x: x,
+            y: y,
+            neighbors: point.neighbors
+        });
     });
 
     return quantizedPoints;
@@ -96,29 +123,39 @@ function drawLine(x1, y1, x2, y2){
     ctx.beginPath();
     ctx.moveTo(x1,y1);
 
-    const controlX = Math.random() > 0.5 ? ((x1 + x2) / 2) : x1;
-    const controlY = Math.random() > 0.5 ? ((y1 + y2) / 2) : y1;
+    // const controlX = Math.random() > 0.5 ? ((x1 + x2) / 2) : x1;
+    // const controlY = Math.random() > 0.5 ? ((y1 + y2) / 2) : y1;
 
-    ctx.quadraticCurveTo(controlX, controlY, x2, y2);
+    // ctx.quadraticCurveTo(controlX, controlY, x2, y2);
+
+    ctx.lineTo(x2,y2);
     ctx.stroke();
 }
 
-// make a path between each point and it's closest neighbor
+// make a path between each point and its neighbors
 function generatePaths(){
+    
     let paths = [];
+
     for(let i = 0; i < points.length; i++){
-        let closest = findClosestNeighbor(points[i], points);
-        paths.push([points[i], closest]);
+        
+        for (const neighbor of points[i].neighbors) {
+            paths.push([points[i], getStationByID(neighbor)]);
+        }
     }
+
     return paths;
 }
 
 function findClosestNeighbor(point, points){
     let closest = points[0];
     let closestDistance = distance(point, points[0]);
+
     for(let i = 1; i < points.length; i++){
+
         let dist = distance(point, points[i]);
-        if(dist < closestDistance && dist != 0){
+
+        if(dist < closestDistance && dist != 0 && closest.neighbors.includes(points[i].id) == false){
             closest = points[i];
             closestDistance = dist;
         }
@@ -126,15 +163,139 @@ function findClosestNeighbor(point, points){
     return closest;
 }
 
+function findStationDistances(points){
+
+    for(let i = 0; i < points.length; i++){
+
+        points[i].stationDistances = [];
+
+        for (j = 0; j < points.length; j++){
+            if (i == j){
+                continue;
+            }
+            let dist = distance(points[i], points[j]);
+            
+            points[i].stationDistances.push({node:points[j].id, length: dist});
+        }   
+
+        points[i].stationDistances.sort((a, b) => a.length - b.length);
+    }
+    console.log(points);
+}
+
 // distance between two points
 function distance(p1, p2){
-    return Math.sqrt(Math.pow(p1[0] - p2[0], 2) +
-                        Math.pow(p1[1] - p2[1], 2));    
+    return Math.sqrt(Math.pow(p1.x - p2.x, 2) +
+                        Math.pow(p1.y - p2.y, 2));    
 }
 
 function drawPaths(paths){
 
     paths.forEach((path) => {
-        drawLine(path[0][0], path[0][1], path[1][0], path[1][1]);
+        drawLine(path[0].x, path[0].y, path[1].x, path[1].y);
     });
 }
+
+function getCenterStation(){
+
+    // calculate center of mass
+    let center = {
+        x: 0, y: 0
+    };
+    points.forEach((point) => {
+        center.x += point.x;
+        center.y += point.y;
+    });
+    center.x /= points.length;
+    center.y /= points.length;
+
+    // find closest station to center of mass
+    let closest = points[0];
+    let closestDistance = distance(center, points[0]);
+
+    points.forEach((point) => {
+        let new_distance = distance(center, point);
+        if (new_distance < closestDistance){
+            closest = point;
+            closestDistance = new_distance;
+        }
+    });
+
+    return closest;
+}
+
+// use prim's algorithm to construct a spanning tree
+function findMinimumSpanningTree(points) {
+    const mst = [];
+    const nonMST = [...points];
+    const startNode = centralStation;
+  
+    mst.push(startNode);
+    let index = nonMST.indexOf(startNode);
+    nonMST.splice(index, 1);
+  
+    while (nonMST.length > 0) {
+        let minEdge = null;
+        let fromNode = null;
+        let toNode = null;
+    
+        for (const mstNode of mst) {
+
+            // console.log("checking neighbors of " + JSON.stringify(mstNode, null, 2))
+
+            // console.log(mstNode.stationDistances)
+
+            for (const neighbor of mstNode.stationDistances) { 
+
+                // console.log("checking neighbor" + JSON.stringify(neighbor, null, 2))
+
+                // console.log("checking if neighbor is in nonMST: " + checkForID(neighbor.node, nonMST))
+
+                if (checkForID(neighbor.node, nonMST)) {
+                    const edgeLength = neighbor.length;
+                    // console.log("edge length: " + edgeLength)
+
+                    if (!minEdge || edgeLength < minEdge) {
+                        minEdge = edgeLength;
+                        fromNode = getStationByID(mstNode.id);
+                        toNode = getStationByID(neighbor.node);
+                    }
+                }
+            }
+        }
+  
+        mst.push(toNode);
+        nonMST.splice(nonMST.indexOf(toNode), 1);
+
+        console.log(fromNode.id + " -> " + toNode.id + " : " + minEdge);
+    
+        // Update stationDistances to remove the 'toNode'
+        fromNode.neighbors.push(toNode.id);
+        toNode.neighbors.push(fromNode.id);
+    }
+  
+    return mst;
+}
+  
+function checkForID(id, array){
+    for(let i = 0; i < array.length; i++){
+        if(array[i].id == id){
+            return true;
+        }
+    }
+    return false;
+}
+
+function getStationByID(id){
+    for(let i = 0; i < points.length; i++){
+        if(points[i].id == id){
+            return points[i];
+        }
+    }
+    return null;
+}
+  
+
+
+
+// --------------------------------------------
