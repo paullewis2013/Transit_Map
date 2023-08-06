@@ -26,7 +26,7 @@ centralStation = null;
 
 async function main(){
     clearCanvas();
-    points = generateNPoints(100);
+    points = generateNPoints(40);
     drawPoints(points);
 
     await sleep(1000);
@@ -56,8 +56,8 @@ function generateNPoints(n) {
     for (let i = 0; i < n; i++) {
         points.push({
             id: "#" + i,
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
+            x: Math.random() * (canvas.width * 0.95) + (canvas.width * 0.025),
+            y: Math.random() * (canvas.height * 0.95) + (canvas.height * 0.025),
             neighbors: []
         });
     }
@@ -89,12 +89,25 @@ function quantizePoints(points){
     points.forEach((point) => {
         let x = Math.round(point.x / rounding) * rounding;
         let y = Math.round(point.y / rounding) * rounding;
-        quantizedPoints.push({
-            id: point.id,
-            x: x,
-            y: y,
-            neighbors: point.neighbors
-        });
+
+        let found = false;
+
+        // if the point is already in the list, don't add it again
+        for(let i = 0; i < quantizedPoints.length; i++){
+            if(quantizedPoints[i].x == x && quantizedPoints[i].y == y){
+                found = true;
+            }
+        }
+
+        if(!found){
+            quantizedPoints.push({
+                id: point.id,
+                x: x,
+                y: y,
+                neighbors: point.neighbors
+            });
+        }
+
     });
 
     return quantizedPoints;
@@ -140,7 +153,45 @@ function generatePaths(){
     for(let i = 0; i < points.length; i++){
         
         for (const neighbor of points[i].neighbors) {
-            paths.push([points[i], getStationByID(neighbor)]);
+
+            // check if path is vertical, horizontal, or diagonal
+            if (points[i].x == getStationByID(neighbor).x || points[i].y == getStationByID(neighbor).y || Math.abs(points[i].x - getStationByID(neighbor).x) == Math.abs(points[i].y - getStationByID(neighbor).y)){
+                paths.push([points[i], getStationByID(neighbor)]);
+            }
+
+            // otherwise make 1 path along a 45 degree angle and 1 path from there to the neighbor
+            else{
+
+                // if difference in x is greater than difference in y
+                if(Math.abs(points[i].x - getStationByID(neighbor).x) > Math.abs(points[i].y - getStationByID(neighbor).y)){
+                    
+                    if(points[i].x < getStationByID(neighbor).x){
+
+                        paths.push([
+                            points[i], 
+                            {x: points[i].x + Math.abs(points[i].y - getStationByID(neighbor).y), y: getStationByID(neighbor).y}
+                        ]);
+                        paths.push([
+                            {x: points[i].x + Math.abs(points[i].y - getStationByID(neighbor).y), y: getStationByID(neighbor).y},
+                            getStationByID(neighbor)
+                        ]);
+                    }
+                }else{
+
+                    if (points[i].y < getStationByID(neighbor).y){
+
+                        paths.push([
+                            points[i], 
+                            {y: points[i].y + Math.abs(points[i].x - getStationByID(neighbor).x), x: getStationByID(neighbor).x}
+                        ]);
+                        paths.push([
+                            {y: points[i].y + Math.abs(points[i].x - getStationByID(neighbor).x), x: getStationByID(neighbor).x},
+                            getStationByID(neighbor)
+                        ]);
+
+                    }
+                }
+            }
         }
     }
 
